@@ -65,7 +65,7 @@ class Sequential:
 
     def start(self):
         """Used once to get the initial observations."""
-        observations = [env.reset() for env in self.environments]
+        observations = [env.reset()[0] for env in self.environments]
         muscle_states = [env.muscle_states for env in self.environments]
         self.lengths = np.zeros(len(self.environments), int)
         return np.array(observations, np.float32), np.array(
@@ -81,11 +81,11 @@ class Sequential:
         muscle_states = []
 
         for i in range(len(self.environments)):
-            ob, rew, term, env_info = self.environments[i].step(actions[i])
+            ob, rew, term, trunc, env_info = self.environments[i].step(actions[i])
             muscle = self.environments[i].muscle_states
             self.lengths[i] += 1
-            # Timeouts trigger resets but are not true terminations.
-            reset = term or self.lengths[i] == self._max_episode_steps
+            # Timeouts trigger resets but are not true terminations.  #TODO: is last condition still needed?
+            reset = term or trunc or self.lengths[i] == self._max_episode_steps
             next_observations.append(ob)
             rewards.append(rew)
             resets.append(reset)
@@ -93,7 +93,7 @@ class Sequential:
             terminations.append(term)
 
             if reset:
-                ob = self.environments[i].reset()
+                ob, info = self.environments[i].reset()
                 muscle = self.environments[i].muscle_states
                 self.lengths[i] = 0
 
