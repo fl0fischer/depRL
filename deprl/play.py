@@ -5,6 +5,9 @@ import os
 
 import numpy as np
 
+from gymnasium.wrappers import RecordVideo
+#from gymnasium.experimental.wrappers import RecordVideoV0 as RecordVideo
+
 from deprl import env_wrappers, mujoco_render
 from deprl.utils import load_checkpoint
 from deprl.vendor.tonic import logger
@@ -72,7 +75,10 @@ def get_paths(path, checkpoint, checkpoint_file):
 
 def play_gym(agent, environment, noisy, num_episodes, no_render):
     """Launches an agent in a Gym-based environment."""
-    observations = environment.reset()
+    environment.unwrapped.render_mode = "rgb_array"
+    rendered_images = []
+
+    observations, _ = environment.reset()
     muscle_states = environment.muscle_states
 
     score = 0
@@ -84,6 +90,7 @@ def play_gym(agent, environment, noisy, num_episodes, no_render):
     steps = 0
     episodes = 0
 
+    logger.log(f"Playing {num_episodes} episodes.")
     while True:
         if not noisy:
             actions = agent.test_step(
@@ -95,10 +102,10 @@ def play_gym(agent, environment, noisy, num_episodes, no_render):
             )
         if len(actions.shape) > 1:
             actions = actions[0, :]
-        observations, reward, done, info = environment.step(actions)
+        observations, reward, term, trunc, info = environment.step(actions)
         muscle_states = environment.muscle_states
         if not no_render:
-            mujoco_render(environment)
+            rendered_images.append(mujoco_render(environment))
 
         steps += 1
         score += reward
@@ -108,28 +115,30 @@ def play_gym(agent, environment, noisy, num_episodes, no_render):
         global_max_reward = max(global_max_reward, reward)
         length += 1
 
-        if done or length >= environment.max_episode_steps:
+        if term or trunc:  # or length >= environment.max_episode_steps:
             episodes += 1
 
             print()
             print(f"Episodes: {episodes:,}")
             print(f"Score: {score:,.3f}")
             print(f"Length: {length:,}")
-            print(f"Terminal: {done:}")
+            print(f"Terminated: {term:}")
+            print(f"Truncated: {trunc:}")
             print(f"Min reward: {min_reward:,.3f}")
             print(f"Max reward: {max_reward:,.3f}")
             print(f"Global min reward: {min_reward:,.3f}")
             print(f"Global max reward: {max_reward:,.3f}")
-            observations = environment.reset()
-            muscle_states = environment.muscle_states
-
-            score = 0
-            length = 0
-            min_reward = float("inf")
-            max_reward = -float("inf")
             if episodes >= num_episodes:
                 break
+            else:                
+                observations, _ = environment.reset()
+                muscle_states = environment.muscle_states
 
+                score = 0
+                length = 0
+                min_reward = float("inf")
+                max_reward = -float("inf")
+    #environment.close()  #required for storing recorded video to file correctly (which is done by RecordVideo wrapper)
 
 def play_scone(
     agent, environment, noisy, num_episodes, no_render, checkpoint_path, name
@@ -309,6 +318,7 @@ def play(
         path, checkpoint, checkpoint_file
     )
     config, checkpoint_path, _ = load_checkpoint(checkpoint_path, checkpoint)
+    output_path = os.path.join(path, "evaluate/")
 
     # Get important info from config
     header = header or config["tonic"]["header"]
@@ -327,8 +337,8 @@ def play(
 
     # Build the environment.
     environment = eval(environment)
-    environment.seed(seed)
     environment = env_wrappers.apply_wrapper(environment)
+    environment.seed(seed)
     if config and "env_args" in config:
         environment.merge_args(config["env_args"])
         environment.apply_args()
@@ -363,8 +373,8 @@ def play(
             config["tonic"]["name"],
         )
     else:
-        play_gym(agent, environment, noisy, num_episodes, no_render)
-
+        env = RecordVideo(environment, video_folder=output_path, episode_trigger=lambda i: True)
+        play_gym(agent, env, noisy, num_episodes, no_render)
 
 if __name__ == "__main__":
     # Argument parsing.
