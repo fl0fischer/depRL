@@ -1,4 +1,5 @@
 from deprl.vendor.tonic import logger
+import numpy as np
 
 from .wrappers import ExceptionWrapper
 
@@ -39,22 +40,31 @@ class GymWrapper(ExceptionWrapper):
         self.error = (error_mjpy, error_mj, DummyException)[dummy_counter]
 
     def render(self, *args, **kwargs):
-        kwargs["mode"] = "window"
-        self.unwrapped.sim.render(*args, **kwargs)
+        #kwargs["mode"] = "window"
+        return self.unwrapped.render(*args, **kwargs)
 
     def muscle_lengths(self):
-        length = self.unwrapped.sim.data.actuator_length
+        length = self.unwrapped.data.actuator_length
         return length
 
     def muscle_forces(self):
-        return self.unwrapped.sim.data.actuator_force
+        return self.unwrapped.data.actuator_force
 
     def muscle_velocities(self):
-        return self.unwrapped.sim.data.actuator_velocity
+        return self.unwrapped.data.actuator_velocity
 
     def muscle_activity(self):
-        return self.unwrapped.sim.data.act
+        return self.unwrapped.data.act
 
     @property
     def _max_episode_steps(self):
         return self.unwrapped.max_episode_steps
+
+    def seed(self, seed):
+        self.unwrapped.np_random = np.random.RandomState(seed)
+
+    def __getattr__(self, name):
+        try:
+            super().__getattr__(name)  #return self.env.name, as defined in gym/gymnasium's __getattr__ method
+        except AttributeError:
+            return object.__getattribute__(self, name)  #return self.name, if self.env.name is not available
